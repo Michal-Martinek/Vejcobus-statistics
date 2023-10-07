@@ -1,2 +1,6 @@
 api_auth_token.txt
-*.csv
+_*
+
+datapoints
+logs
+backups

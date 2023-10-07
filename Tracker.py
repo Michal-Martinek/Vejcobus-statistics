@@ -1,8 +1,8 @@
 import requests
-import logging
-
 import pandas as pd
-import os, datetime
+import os, argparse
+import datetime
+import logging, inspect, traceback
 
 API_TOKEN_FILE = 'api_auth_token.txt'
 API_TOKEN_VAL = ''
@@ -12,37 +12,58 @@ DT_FEATURE_COLLECTION = 'FeatureCollection'
 DT_FEATURE = 'Feature'
 DT_POINT = 'Point'
 
-DATAPOINT_FILE = 'datapoints.csv'
+DATAPOINT_FOLDER = 'datapoints'
+LOG_FOLDER = 'logs'
+DATAPOINT_FILE = '{}.csv'
+LOG_FILE = 'log_{}.txt'
+
+DEFAULT_LOGGING_LVL = 'WARNING'
 
 # helpers -------------------------------------
 def init():
+	os.chdir(os.path.dirname(__file__))
+	initFiles(datetime.datetime.now().strftime('%Y-%m-%d'))
+	initLogging()
 	global API_TOKEN_VAL
 	with open(API_TOKEN_FILE) as f:
 		API_TOKEN_VAL = f.read()
+def initFiles(dateStr):
+	global DATAPOINT_FILE, LOG_FILE
+	DATAPOINT_FILE = os.path.join(DATAPOINT_FOLDER, DATAPOINT_FILE.format(dateStr))
+	LOG_FILE = os.path.join(LOG_FOLDER, LOG_FILE.format(dateStr))
+	if not os.path.exists(DATAPOINT_FOLDER): os.mkdir(DATAPOINT_FOLDER)
+	if not os.path.exists(LOG_FOLDER): os.mkdir(LOG_FOLDER)
+def initLogging():
+	parser = argparse.ArgumentParser('Tracker.py')
+	parser.add_argument('--log', help='set the logging level', type=str, default=DEFAULT_LOGGING_LVL)
+	logLvl = parser.parse_args().log
+	logLvl = getattr(logging, logLvl.upper(), DEFAULT_LOGGING_LVL)
+	logging.basicConfig(filename=LOG_FILE, level=logLvl, format='[%(levelname)s] %(asctime)s %(module)s:%(funcName)s	%(message)s')
+	logging.info('running')
 def asert(cond, msg, obj=None):
 	if cond: return
 	if obj is not None:
-		msg = f'{msg}: {obj}'
-	logging.error(msg)
-	raise RuntimeError(msg) # TODO logging into file
+		msg = f"{msg}: '{obj}'"
+	caller = inspect.getframeinfo(inspect.stack()[1][0])
+	logging.error(f'{os.path.basename(caller.filename)}:{caller.lineno} ASSERTION FAILED: {msg}')
+	exit(1)
 
 def checkType(d, dtype:str):
 	asert('type' in d and d['type'] == dtype, 'Unexpected field type')
 	del d['type']
-def getVal(d: dict, name, nullable=False, default=None): # TODO default values?
+def getVal(d: dict, name):
 	asert(name in d, 'Element not found', name)
 	d = d[name]
-	if nullable and d is None: return default
 	return d
 def getTyped(d: dict, name, dtype: str):
 	d = d[name]
 	checkType(d, dtype)
 	return d
-def unpack(d: dict, name, dtype: str=None, *, nullable=False, default=None, prefix=False):
+def unpack(d: dict, name, dtype: str=None, *, prefix=False):
 	'''Unpacks a dictionary field in @d with @name into @d
 	@dtype - optionally check the dtype of the field
 	@prefix - prefix unpacked keys with @name_'''
-	packed = getVal(d, name, nullable, default) if dtype is None else getTyped(d, name, dtype)
+	packed = getVal(d, name) if dtype is None else getTyped(d, name, dtype)
 	asert(isinstance(packed, dict), 'Packed field is not of dict type')
 	del d[name]
 	if prefix: packed = {'_'.join((name, k)):v for k, v in packed.items()}
@@ -53,11 +74,17 @@ def unpackList(d, name, fieldNames):
 	del d[name]
 	d.update( {k:v for k, v in zip(fieldNames, l)} )
 # requests --------------------------------------
+def _makeReg(url, params, method='GET') -> requests.Response:
+	try:
+		res = requests.request(method, url, params=params, headers={'X-Access-Token': API_TOKEN_VAL})
+	except requests.exceptions.RequestException as e:
+		logging.error(e)
+		exit(1)
+	asert(res.status_code == 200, f'{method} request failed with code {res.status_code}\n	URL {res.url}\n	MESSAGE {res.text}\n')
+	return res
 def makeGetReq(apiPath, **params) -> dict:
 	url = API_URL + '/' + apiPath
-	logging.debug(f'[GET] {url}, params: {params}')
-	res = requests.get(url, params, headers={'X-Access-Token': API_TOKEN_VAL})
-	asert(res.status_code == 200, f'Get request failed with code {res.status_code}\nURL {res.url}\MESSAGE {res.text}')
+	res = _makeReg(url, params)
 	return res.json()
 def getVehiclePositions() -> list[dict]:
 	d = makeGetReq('vehiclepositions', routeShortName='202', includeNotTracking=1)
@@ -83,15 +110,23 @@ def saveToCSV(df):
 def processVehiclePositions(poss: list[dict]) -> pd.DataFrame:
 	for d in poss: unpackVehiclePosition(d)
 	df = pd.DataFrame(poss)
-	df.insert(0, 'time_ran', datetime.datetime.now().strftime('%H:%M:%S'))
-	saveToCSV(df)
+	df.insert(0, 'time_ran', datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'))
+	return df
 	# TODO as multiindex use trip_id and origin_timestamp
-	# TODO avoid JSON / handle singlequotes
+def track():
+	poss = getVehiclePositions()
+	df = processVehiclePositions(poss)
+	saveToCSV(df)
 
 def main():
-	init()
-	poss = getVehiclePositions()
-	processVehiclePositions(poss)
+	try:
+		init()
+		track()
+	except Exception as e:
+		strs = traceback.format_exception(type(e), e, e.__traceback__)
+		strs = 'UNCATCHED ' + strs[-1] + ''.join(['	' + s for s in strs[:-1]])
+		logging.critical(strs)
+		raise
 
 if __name__ == '__main__':
 	main()
