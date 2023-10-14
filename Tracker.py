@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import os, argparse
-import datetime
+import datetime, time
 import logging, inspect, traceback
 
 API_TOKEN_FILE = 'api_auth_token.txt'
@@ -18,6 +18,7 @@ DATAPOINT_FILE = '{}.csv'
 LOG_FILE = 'log_{}.txt'
 
 DEFAULT_LOGGING_LVL = 'WARNING'
+DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S' + f"{'-' if time.altzone > 0 else '+'}{abs(time.altzone)//3600:0>2}:{abs(time.altzone//60) % 60:0>2}"
 
 # helpers -------------------------------------
 def init():
@@ -26,7 +27,7 @@ def init():
 	initLogging()
 	global API_TOKEN_VAL
 	with open(API_TOKEN_FILE) as f:
-		API_TOKEN_VAL = f.read()
+		API_TOKEN_VAL = f.read().split('\n')[0]
 def initFiles(dateStr):
 	global DATAPOINT_FILE, LOG_FILE
 	DATAPOINT_FILE = os.path.join(DATAPOINT_FOLDER, DATAPOINT_FILE.format(dateStr))
@@ -38,15 +39,16 @@ def initLogging():
 	parser.add_argument('--log', help='set the logging level', type=str, default=DEFAULT_LOGGING_LVL)
 	logLvl = parser.parse_args().log
 	logLvl = getattr(logging, logLvl.upper(), DEFAULT_LOGGING_LVL)
-	logging.basicConfig(filename=LOG_FILE, level=logLvl, format='[%(levelname)s] %(asctime)s %(module)s:%(funcName)s	%(message)s')
+	logging.basicConfig(filename=LOG_FILE, level=logLvl, format='[%(levelname)s] %(asctime)s %(module)s:%(funcName)s	%(message)s', datefmt=DATETIME_FORMAT)
 	logging.info('running')
 def asert(cond, msg, obj=None):
 	if cond: return
 	if obj is not None:
 		msg = f"{msg}: '{obj}'"
 	caller = inspect.getframeinfo(inspect.stack()[1][0])
-	logging.error(f'{os.path.basename(caller.filename)}:{caller.lineno} ASSERTION FAILED: {msg}')
-	exit(1)
+	msg = f'{os.path.basename(caller.filename)}:{caller.lineno} ASSERTION FAILED: {msg}'
+	logging.error(msg)
+	exit(msg)
 
 def checkType(d, dtype:str):
 	asert('type' in d and d['type'] == dtype, 'Unexpected field type')
@@ -79,7 +81,7 @@ def _makeReg(url, params, method='GET') -> requests.Response:
 		res = requests.request(method, url, params=params, headers={'X-Access-Token': API_TOKEN_VAL})
 	except requests.exceptions.RequestException as e:
 		logging.error(e)
-		exit(1)
+		exit(e)
 	asert(res.status_code == 200, f'{method} request failed with code {res.status_code}\n	URL {res.url}\n	MESSAGE {res.text}\n')
 	return res
 def makeGetReq(apiPath, **params) -> dict:
@@ -110,7 +112,7 @@ def saveToCSV(df):
 def processVehiclePositions(poss: list[dict]) -> pd.DataFrame:
 	for d in poss: unpackVehiclePosition(d)
 	df = pd.DataFrame(poss)
-	df.insert(0, 'time_ran', datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S'))
+	df.insert(0, 'time_ran', datetime.datetime.now().strftime(DATETIME_FORMAT))
 	return df
 	# TODO as multiindex use trip_id and origin_timestamp
 def track():
