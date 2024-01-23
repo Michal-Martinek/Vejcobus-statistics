@@ -1,4 +1,3 @@
-# hash bang
 if [ $# -lt 3 ]; then
 	echo "Missing cmd arguments: day(mm-dd) [mode(W-hole/P-artial/F-ind pattern)] hour(hh) minute(mm) [timezone(z)] [direction(P-oliklinika/C-akovice]"
 	exit
@@ -39,7 +38,7 @@ else
 		fi
 		if [ $# -ge 1 ]; then
 			DESTINATION="(Čakovice|Kbelský pivovar)"
-			if [[ $1 =~ [p|P] ]]; then
+			if [[ $1 =~ [pP] ]]; then
 				DESTINATION="Poliklinika Mazurská"
 			fi
 			DESTINATION="(?=.*$DESTINATION)"
@@ -56,5 +55,13 @@ if [ $MODE = W ]; then
 	exit
 fi
 
-STARTS=$(grep -Eo ".+([0-9]{2}\.[0-9]+,){2}(,*[^,]+){2}|(Poliklinika Mazurská|Čakovice|Kbelský pivovar)" <<< "$LINES")
-echo "$STARTS"
+echo "$LINES" | while read -r LINE ; do
+	grep -Eoz ".+([0-9]{2}\.[0-9]+,){2}(,*[^,]+){2}" <<< "$LINE"
+	echo -n ,
+	grep -Eoz "(Poliklinika Mazurská|Čakovice|Kbelský pivovar),[^,]+" <<< "$LINE"
+	echo -n "      "
+	COORDS=$(grep -Eo "[0-9]{2}\.[0-9]+,[0-9]{2}\.[0-9]+" <<< "$LINE")
+	COORDS=(${COORDS//,/ })
+	echo -n ${COORDS[1]},
+	echo ${COORDS[0]}
+done
