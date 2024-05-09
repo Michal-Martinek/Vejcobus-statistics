@@ -2,6 +2,7 @@ api_auth_token.txt
 _*
 
 datapoints
+downloadedDatapoints
 logs
 backups
 
