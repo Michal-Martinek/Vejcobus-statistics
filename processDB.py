@@ -52,22 +52,27 @@ def checkDtype(data: pd.DataFrame, col: str, dtype, allowNans=False):
 	check(data[col].dtype == dtype, "Expected dtype {} along column '{}', actual {}", dtype, col, data[col].dtype)
 	if not allowNans and dtype == np.float64: check(not np.isnan(data[col]).any(), "Unexpected NaN in col '{}'", col)
 def checkTimestamp(data: pd.DataFrame, col: str, utc=False):
-	check(is_datetime64_ns_dtype(data[col]), "Expected datetime col '{}', actual type is {}", col, data[col].dtype)
-	if utc: check(data[col].dt.tz == pytz.UTC, "Expected UTC timestamp in col '{}', got {}", col, data[col].dtype)
-	# TODO else
+	if utc:
+		check(is_datetime64_ns_dtype(data[col]), "Expected datetime col '{}', actual type is {}", col, data[col].dtype)
+		return check(data[col].dt.tz == pytz.UTC, "Expected UTC timestamp in col '{}', got {}", col, data[col].dtype)
+	split = data[col].astype(str).str.rsplit('+', n=1, expand=True)
+	data[col] = split[0].astype(np.datetime64)
+	if 'timezone' in data.columns:
+		check((split[1] == data['timezone']).all(), 'Identical timezone expected along datapoint')
+	else: data['timezone'] = split[1]
 def checkVals(data: pd.DataFrame):
 	checkTimestamp(data, 'time_ran', utc=True)
+	for col in DATETIME_COLS[1:]:
+		checkTimestamp(data, col)
 	checkDtype(data, 'lon', np.float64)
 	checkDtype(data, 'lat', np.float64)
 	checkDtype(data, 'bearing', np.int64)
 	checkUniqueVals(data, 'is_canceled')
-	checkTimestamp(data, 'origin_timestamp')
 	checkDtype(data, 'shape_dist_traveled', np.float64)
 	checkDtype(data, 'speed', np.float64, allowNans=True)
 	checkUniqueVals(data, 'state_position', 'on_track', 'at_stop')
 	checkUniqueVals(data, 'tracking', True)
 	checkDtype(data, 'sequence_id', np.int64)
-	checkTimestamp(data, 'start_timestamp')
 	checkDtype(data, 'vehicle_registration_number', np.int64)
 	checkUniqueVals(data, 'wheelchair_accessible', True)
 	checkUniqueVals(data, 'air_conditioned', True, False)
@@ -79,11 +84,7 @@ def checkVals(data: pd.DataFrame):
 	checkDtype(data, 'delay_actual', np.int64)
 	checkDtype(data, 'delay_last_stop_arrival', np.float64, allowNans=True)
 	checkDtype(data, 'delay_last_stop_departure', np.float64, allowNans=True)
-	checkTimestamp(data, 'last_stop_arrival_time')
-	checkTimestamp(data, 'last_stop_departure_time')
 	checkDtype(data, 'last_stop_sequence', np.int64)
-	checkTimestamp(data, 'next_stop_arrival_time')
-	checkTimestamp(data, 'next_stop_departure_time')
 	checkDtype(data, 'next_stop_sequence', np.int64)
 	checkUniqueVals(data, 'agency_name_real', 'DP PRAHA')
 	checkUniqueVals(data, 'agency_name_scheduled', 'DP PRAHA')
@@ -92,6 +93,8 @@ def checkVals(data: pd.DataFrame):
 	checkUniqueVals(data, 'vehicle_type_description_cs', 'autobus')
 	checkUniqueVals(data, 'vehicle_type_description_en', 'bus')
 	checkUniqueVals(data, 'vehicle_type_id', 3)
+	checkUniqueVals(data, 'timezone', '01:00', '02:00')
+	data['timezone'] = data['timezone'].str.split(':', expand=True)[0].astype(int)
 
 def main():
 	filenames = getFilenames()
