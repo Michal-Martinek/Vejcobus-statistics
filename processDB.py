@@ -34,6 +34,8 @@ def getFilenames():
 
 HEADERS = 'time_ran,lon,lat,bearing,is_canceled,origin_timestamp,shape_dist_traveled,speed,state_position,tracking,origin_route_name,sequence_id,start_timestamp,vehicle_registration_number,wheelchair_accessible,air_conditioned,route_id,route_short_name,route_type,trip_headsign,trip_id,trip_short_name,delay_actual,delay_last_stop_arrival,delay_last_stop_departure,last_stop_arrival_time,last_stop_departure_time,last_stop_id,last_stop_sequence,next_stop_arrival_time,next_stop_departure_time,next_stop_id,next_stop_sequence,agency_name_real,agency_name_scheduled,cis_line_id,cis_trip_number,vehicle_type_description_cs,vehicle_type_description_en,vehicle_type_id'
 DATETIME_COLS = ['time_ran', 'origin_timestamp', 'start_timestamp', 'last_stop_arrival_time', 'last_stop_departure_time', 'next_stop_arrival_time', 'next_stop_departure_time']
+UNNECESSARY_COLS = ['is_canceled', 'speed', 'tracking', 'route_type', 'trip_short_name', 'cis_line_id', 'cis_trip_number', 'vehicle_type_description_cs', 'vehicle_type_description_en', 'vehicle_type_id']
+
 def getFrames(filenames):
 	allFrame = pd.DataFrame()
 	for name, file in filenames.items():
@@ -70,6 +72,7 @@ def checkVals(data: pd.DataFrame):
 	checkUniqueVals(data, 'is_canceled')
 	checkDtype(data, 'shape_dist_traveled', np.float64)
 	checkDtype(data, 'speed', np.float64, allowNans=True)
+	check(np.isnan(data['speed']).all(), "Expected only NaNs in col 'speed'")
 	checkUniqueVals(data, 'state_position', 'on_track', 'at_stop')
 	checkUniqueVals(data, 'tracking', True)
 	checkDtype(data, 'sequence_id', np.int64)
@@ -96,9 +99,13 @@ def checkVals(data: pd.DataFrame):
 	checkUniqueVals(data, 'timezone', '01:00', '02:00')
 	data['timezone'] = data['timezone'].str.split(':', expand=True)[0].astype(int)
 
+	data = data.drop(UNNECESSARY_COLS, axis=1)
+	return data
+
 def main():
 	filenames = getFilenames()
 	frames = getFrames(filenames)
-	checkVals(frames)
+	frames = checkVals(frames)
+
 if __name__ == '__main__':
 	main()
