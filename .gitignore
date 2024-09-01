@@ -1,6 +1,7 @@
 api_auth_token.txt
 _*
 *.txt
+*.json
 
 datapoints
 downloadedDatapoints
